@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatMCA</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #e5e7eb;
+        }
+
+        /* Custom scrollbar styles */
+        #messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #messages::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        #messages::-webkit-scrollbar-thumb {
+            background-color: #9ca3af;
+            border-radius: 4px;
+            border: 2px solid #f1f5f9;
+        }
+
+        /* Message Bubble Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-bubble {
+            animation: fadeIn 0.3s ease-out;
+        }
+    </style>
+</head>
+
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <!-- Chat Container -->
+    <div class="bg-white w-full max-w-2xl h-[80vh] flex flex-col shadow-xl rounded-2xl overflow-hidden">
+
+        <!-- Header -->
+        <div class="p-5 border-b border-gray-200 flex items-center justify-between">
+            <h1 class="text-2xl font-bold text-gray-800">ChatMCA</h1>
+            <span class="text-sm text-green-500 font-semibold">
+                Online
+                <span class="inline-block w-2.5 h-2.5 bg-green-500 rounded-full ml-1"></span>
+            </span>
+        </div>
+
+        <!-- Messages Display Area -->
+        <div id="messages" class="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50">
+            <!-- Dynamic messages will be added here by JavaScript -->
+        </div>
+
+        <!-- Input Form -->
+        <form id="chat-form" class="flex items-center border-t border-gray-200 p-4 gap-3">
+            {% csrf_token %}
+            <input id="prompt" class="flex-1 border-2 border-gray-300 rounded-full px-5 py-3 text-gray-800
+                          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                          transition duration-200" placeholder="Type a message..." autocomplete="off">
+            <button class="bg-blue-600 text-white px-6 py-3 rounded-full font-semibold shadow-md
+                           hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500
+                           transition duration-300 transform hover:scale-105">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 rotate-90" viewBox="0 0 20 20"
+                    fill="currentColor">
+                    <path
+                        d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 00.185.73l-.001.002.001.001A1 1 0 002 18h16a1 1 0 00.723-1.664l-7-14zM11 16.5l3-3.001L14 8h-4v8.5zM6 13.5l3 3V8H6l-3 3.001L6 13.5z" />
+                </svg>
+            </button>
+        </form>
+    </div>
+
+    <script>
+        function getCookie(name) {
+            let value = `; ${document.cookie}`;
+            let parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+        const csrftoken = getCookie('csrftoken');
+
+        const messagesDiv = document.getElementById('messages');
+        const form = document.getElementById('chat-form');
+        const promptInput = document.getElementById('prompt');
+
+        function addMessage(who, text, isThinking = false) {
+            let div = document.createElement('div');
+            div.className = who === 'user' ? 'text-right' : 'text-left';
+
+            let bubble = document.createElement('div');
+            bubble.className = who === 'user'
+                ? 'inline-block bg-blue-600 text-white px-5 py-3 rounded-2xl rounded-tr-none shadow-md max-w-xs md:max-w-md break-words message-bubble'
+                : 'inline-block bg-gray-200 text-gray-900 px-5 py-3 rounded-2xl rounded-tl-none shadow-md max-w-xs md:max-w-md break-words message-bubble';
+
+            bubble.textContent = text;
+            div.appendChild(bubble);
+
+            // Add a class for thinking state to potentially add a loading animation
+            if (isThinking) {
+                bubble.classList.add('animate-pulse');
+            } else {
+                bubble.classList.remove('animate-pulse');
+            }
+
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            let text = promptInput.value.trim();
+            if (!text) return;
+
+            addMessage('user', text);
+            promptInput.value = '';
+
+            const thinkingBubble = addMessage('assistant', 'Thinking...', true);
+
+            try {
+                let resp = await fetch("{% url 'ask' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken,
+                    },
+                    body: JSON.stringify({ message: text }),
+                });
+
+                if (!resp.ok) {
+                    throw new Error(`HTTP error! status: ${resp.status}`);
+                }
+
+                let data = await resp.json();
+
+                messagesDiv.lastChild.remove(); // remove "Thinking..."
+                addMessage('assistant', data.reply || data.error || "An unknown error occurred.");
+            } catch (error) {
+                messagesDiv.lastChild.remove();
+                addMessage('assistant', `Error: ${error.message}`);
+            }
+        });
+    </script>
+</body>

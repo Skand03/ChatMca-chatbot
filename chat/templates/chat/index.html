@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatMCA</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #e5e7eb;
+        }
+
+        /* Custom scrollbar styles */
+        #messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #messages::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        #messages::-webkit-scrollbar-thumb {
+            background-color: #9ca3af;
+            border-radius: 4px;
+            border: 2px solid #f1f5f9;
+        }
+
+        /* Message Bubble Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-bubble {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .typing-indicator span {
+            animation: bounce 0.6s infinite alternate;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes bounce {
+            to {
+                transform: translateY(-8px);
+            }
+        }
+    </style>
+</head>
+
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <!-- Chat Container -->
+    <div class="bg-white w-full max-w-2xl h-[80vh] flex flex-col shadow-xl rounded-2xl overflow-hidden">
+
+        <!-- Header -->
+        <div class="p-5 border-b border-gray-200 flex items-center justify-between">
+            <h1 class="text-2xl font-bold text-gray-800">ChatMCA</h1>
+            <span class="text-sm text-green-500 font-semibold">
+                Online
+                <span class="inline-block w-2.5 h-2.5 bg-green-500 rounded-full ml-1"></span>
+            </span>
+        </div>
+
+        <!-- Messages Display Area -->
+        <div id="messages" class="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50">
+            <!-- Messages from the database are rendered here -->
+            {% for message in messages %}
+            <!-- User Message -->
+            <div class="text-right">
+                <div
+                    class="inline-block bg-blue-600 text-white px-5 py-3 rounded-2xl rounded-tr-none shadow-md max-w-xs md:max-w-md break-words message-bubble">
+                    {{ message.user_message }}
+                </div>
+            </div>
+
+            <!-- Assistant Message -->
+            <div class="text-left">
+                <div
+                    class="inline-block bg-gray-200 text-gray-900 px-5 py-3 rounded-2xl rounded-tl-none shadow-md max-w-xs md:max-w-md break-words message-bubble">
+                    {{ message.assistant_reply }}
+                </div>
+            </div>
+            {% endfor %}
+            <!-- Dynamic messages will be added here by JavaScript -->
+        </div>
+
+        <!-- Input Form -->
+        <form id="chat-form" class="flex items-center border-t border-gray-200 p-4 gap-3">
+            {% csrf_token %}
+            <input id="prompt" class="flex-1 border-2 border-gray-300 rounded-full px-5 py-3 text-gray-800
+                          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                          transition duration-200" placeholder="Type a message..." autocomplete="off">
+            <button class="bg-blue-600 text-white px-6 py-3 rounded-full font-semibold shadow-md
+                           hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500
+                           transition duration-300 transform hover:scale-105">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 rotate-90" viewBox="0 0 20 20"
+                    fill="currentColor">
+                    <path
+                        d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 00.185.73l-.001.002.001.001A1 1 0 002 18h16a1 1 0 00.723-1.664l-7-14zM11 16.5l3-3.001L14 8h-4v8.5zM6 13.5l3 3V8H6l-3 3.001L6 13.5z" />
+                </svg>
+            </button>
+        </form>
+    </div>
+
+    <script>// Get CSRF token
+        function getCookie(name) {
+            let value = `; ${document.cookie}`;
+            let parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
+        const csrftoken = getCookie('csrftoken');
+
+        const messagesDiv = document.getElementById('messages');
+        const form = document.getElementById('chat-form');
+        const promptInput = document.getElementById('prompt');
+
+        // ------------ MARKDOWN-LIKE FORMATTER for assistant replies -------------
+        function formatMessageContent(reply) {
+            // Headings: ## Title
+            reply = reply.replace(/(?:^|\n)## (.+)/g, '<div class="font-bold text-lg mb-2 mt-2">$1</div>');
+            // Lists: - item
+            reply = reply.replace(/(?:^|\n)- (.+)/g, '<li class="mb-1">$1</li>');
+            // Wrap list items in <ul>
+            reply = reply.replace(/(<li[\s\S]+<\/li>)/g, '<ul class="list-disc pl-5 mb-2">$1</ul>');
+            // Code blocks: ``````
+            reply = reply.replace(/``````/g, '<pre class="bg-gray-200 rounded px-4 py-3 my-2 font-mono text-sm overflow-x-auto">$1</pre>');
+            // Inline code: `code`
+            reply = reply.replace(/`([^`]+)`/g, '<code class="bg-gray-100 rounded px-1 font-mono text-sm">$1</code>');
+            // Paragraph splitting (double newline)
+            reply = reply.replace(/\n\n+/g, '</div><div class="mb-2">');
+            // Wrap in <div> for initial paragraph
+            if (!reply.trim().startsWith('<div')) {
+                reply = `<div class="mb-2">${reply}</div>`;
+            }
+            return reply;
+        }
+
+        // NEW: Stable card-style rendering for messages
+        function renderMessage(who, content) {
+            let div = document.createElement('div');
+            div.className = who === 'user' ? 'text-right' : 'text-left';
+
+            let bubble = document.createElement('div');
+            bubble.className = who === 'user'
+                ? 'inline-block bg-blue-600 text-white px-5 py-3 rounded-2xl rounded-tr-none shadow-md max-w-xs md:max-w-md break-words message-bubble mb-4'
+                : 'inline-block bg-white text-gray-900 px-5 py-4 rounded-2xl shadow-md max-w-xs md:max-w-md break-words message-bubble mb-4 border border-gray-200';
+
+            if (who !== 'user') {
+                bubble.innerHTML = formatMessageContent(content.reply);
+            } else {
+                bubble.textContent = content.reply;
+            }
+
+            // Sources for assistant
+            if (content.sources && content.sources.length > 0) {
+                const sourcesDiv = document.createElement('div');
+                sourcesDiv.className = 'mt-3 text-xs text-gray-500';
+                sourcesDiv.innerHTML = 'Sources:<ul class="list-disc pl-5">' +
+                    content.sources.map(src => `<li><a href="${src.uri}" target="_blank" class="hover:underline">${src.title}</a></li>`).join('') +
+                    '</ul>';
+                bubble.appendChild(sourcesDiv);
+            }
+
+            div.appendChild(bubble);
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Optionally keep this for "Assistant is thinking" animation if you use it elsewhere
+        function addMessage(who, content, isThinking = false) {
+            let div = document.createElement('div');
+            div.className = who === 'user' ? 'text-right' : 'text-left';
+            let bubble = document.createElement('div');
+            bubble.className = who === 'user'
+                ? 'inline-block bg-blue-600 text-white px-5 py-3 rounded-2xl rounded-tr-none shadow-md max-w-xs md:max-w-md break-words message-bubble'
+                : 'inline-block bg-gray-200 text-gray-900 px-5 py-3 rounded-2xl rounded-tl-none shadow-md max-w-xs md:max-w-md break-words message-bubble';
+            if (isThinking) {
+                bubble.classList.add('typing-indicator');
+                bubble.innerHTML = `<span></span><span></span><span></span>`;
+            } else {
+                bubble.textContent = content.reply;
+                if (content.sources && content.sources.length > 0) {
+                    const sourcesDiv = document.createElement('div');
+                    sourcesDiv.className = 'mt-2 text-xs text-gray-500 space-y-1';
+                    content.sources.forEach(source => {
+                        const sourceLink = document.createElement('a');
+                        sourceLink.href = source.uri;
+                        sourceLink.target = "_blank";
+                        sourceLink.className = 'block hover:underline';
+                        sourceLink.textContent = source.title;
+                        sourcesDiv.appendChild(sourceLink);
+                    });
+                    div.appendChild(sourcesDiv);
+                }
+            }
+            div.appendChild(bubble);
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            // Remove thinking indicator
+            if (!isThinking) {
+                const thinkingIndicator = messagesDiv.querySelector('.typing-indicator');
+                if (thinkingIndicator) {
+                    thinkingIndicator.remove();
+                }
+            }
+        }
+
+        // Welcome message content (can include markdown formatting)
+        const welcomeMessageContent = {
+            reply: `Short answer: almost anything useful, explainable, or creative — within a few important limits. Here’s a quick guide to what I can do and how to ask.
+## What I can help with (examples)
+- Writing & editing: “Draft a polite follow-up email to a hiring manager,” or “Improve this paragraph.”
+- Learning & explanations: “Explain photosynthesis in simple terms,” or “Walk me through Bayes’ theorem with an example.”
+- Coding & debugging: “Write a Python script to scrape a webpage,” or “Why does this error occur?” (paste code).
+- Math & data: “Solve this integral,” or “How do I analyze this dataset? (I’ll paste sample rows).”
+- Planning & productivity: “Create a 7-day study plan for the GRE,” or “Help me outline a business plan.”
+- Creativity: “Write a short story about a time-traveling gardener,” or “Give me 10 logo ideas for a cafe.”
+- Troubleshooting & how-tos: “Steps to fix a slow laptop,” or “How do I cook a medium-rare steak?”
+- Translations & summaries: “Summarize this article,” or “Translate this paragraph into Spanish.”
+- Roleplay & simulations: “Act as an interviewer and ask me behavioral questions.”
+
+## Important limits
+- I can’t browse the web in real time or access content after my knowledge cutoff (June 2024).
+- I don’t have access to your private files or accounts unless you paste the text here.
+- I’m not a licensed professional — for medical, legal, or financial decisions, I can provide general info but not certified advice.
+- Don’t share sensitive personal data (passwords, SSNs, etc.).
+
+## How to get the best answer
+- Be specific about format, length, audience, and any constraints.
+- If you want revisions, tell me what to change.
+
+Want to try one now? Tell me what you need (short task, a question, or pick a sample from above).`,
+            sources: []
+        };
+
+        // Form submission: send request, show loading, then render formatted response
+        async function handleFormSubmission(e) {
+            e.preventDefault();
+            let text = promptInput.value.trim();
+            if (!text) return;
+            renderMessage('user', { reply: text });
+            promptInput.value = '';
+
+            // Show thinking bubble (optional)
+            addMessage('assistant', { reply: '' }, true);
+            try {
+                let resp = await fetch("{% url 'ask' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken,
+                    },
+                    body: JSON.stringify({ message: text }),
+                });
+                if (!resp.ok) {
+                    throw new Error(`HTTP error! status: ${resp.status}`);
+                }
+                let data = await resp.json();
+                messagesDiv.lastChild.remove(); // Remove thinking
+                // Use new renderMessage for formatted assistant reply
+                renderMessage('assistant', {
+                    reply: data.reply || data.error || "An unknown error occurred.",
+                    sources: data.sources || []
+                });
+            } catch (error) {
+                messagesDiv.lastChild.remove();
+                renderMessage('assistant', { reply: `Error: ${error.message}` });
+            }
+        }
+
+        // Single event listener
+        form.addEventListener('submit', handleFormSubmission);
+
+        // Show welcome message if none present
+        const initialMessagesCount = messagesDiv.children.length;
+        if (initialMessagesCount === 0) {
+            renderMessage('assistant', welcomeMessageContent);
+        }
+
+    </script>
+</body>
+
+</html>
